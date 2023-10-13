@@ -1,0 +1,8 @@
+# 定义类别数(包括背景)
+num_classes: 3
+in_channels: [0, 1, 2]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+batch_size: 1
+num_epochs: 500
+unet_base: 32
+base_size: [656, 848]
+unit_size: [700, 600] # 代表一个单元的尺寸，每个单元由四张图片组成，单位是毫米
