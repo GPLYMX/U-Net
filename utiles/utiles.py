@@ -66,6 +66,7 @@ def resize_img(img, base=unet_base):
     except Exception as e:
         print(e)
         print('图片读取失败')
+        return img
 
 
 # 将灰度图转换为 LabelMe 格式
@@ -114,7 +115,7 @@ def gray_to_labelme(gray_image, class_mapping={0: "background", 1: "tea", 2: "im
 class CustomSegmentationDataset(Dataset):
 
     def __init__(self, data_dir, transform=None, num_classes=3, mode='train', augment=True, channels=[0, 1, 2],
-                 label_format='json'):
+                 label_format='json', low_pixel_test=False):
         """
         :param data_dir: 图片所在路径，一般是combined_data的上一级目录
         :param transform:
@@ -123,6 +124,7 @@ class CustomSegmentationDataset(Dataset):
         :param augment: 是否用图片拼接的方式做数据增强
         :param num_channel:输入的通道数
         :param label_format:代表标签的格式，标签是json文件时名字为'00.json'，放在combined_data文件夹下；标签是png时，名字是’label.png'，放在combined_data的文件夹的上一级目录下
+        :param low_pixel_test:用于测试使用低分辨率高光谱是否可行
         """
         self.data_dir = data_dir
         self.transform = transform
@@ -132,6 +134,7 @@ class CustomSegmentationDataset(Dataset):
         self.augment = augment
         self.channels = channels
         self.label_format = label_format
+        self.low_pixel_test = low_pixel_test
 
     def __len__(self):
         return len(self.file_names)
@@ -200,9 +203,9 @@ class CustomSegmentationDataset(Dataset):
         return gray_image
 
     def read_img(self, img_root):
-        img_root = os.path.join(self.data_dir, img_root, 'combined_data')
+        img_root = os.path.join(self.data_dir, img_root, 'pre_process')
         image = self.combine_img(img_root)
-        image = resize_img(image) / 255.
+        image = resize_img(image)
         return image
 
     def read_label(self, label_name):
@@ -212,11 +215,11 @@ class CustomSegmentationDataset(Dataset):
         :return:
         """
         if self.label_format == 'json':
-            label_name = os.path.join(self.data_dir, label_name, "pretreatment", 'RGB.json')
+            label_name = os.path.join(self.data_dir, label_name, 'RGB.json')
             gray_img = self.labelme_to_gray(label_name)
             label_image_onehot = self.read_gray_label(gray_img)
         if self.label_format == 'png':
-            label_name = os.path.join(self.data_dir, label_name, "pretreatment", 'label.png')
+            label_name = os.path.join(self.data_dir, label_name, 'label.png')
             gray_image = cv2.imread(label_name, cv2.IMREAD_GRAYSCALE)
             gray_image = np.array(gray_image)
             gray_image[gray_image==3] = 1
@@ -233,6 +236,7 @@ class CustomSegmentationDataset(Dataset):
         try:
             label_image_onehot = self.read_label(self.file_names[idx])
 
+
             """
             不选择数据增加就直接输出，否则进行数据拼接
             """
@@ -243,7 +247,7 @@ class CustomSegmentationDataset(Dataset):
                 image1, label_image_onehot1 = self.read_img(self.file_names[random_idx]), self.read_label(self.file_names[random_idx])
 
                 # 随机生成一个矩形框
-                h, w = image.shape[1], image.shape[2]
+                h, w = min(image.shape[1],image1.shape[1]), min(image.shape[2],image1.shape[2]) # 两张图片的大小可能不相同，需要选择尺寸最小的
                 h1 = random.randint(0, h - 3)
                 h2 = random.randint(h1 + 1, h - 1)
                 w1 = random.randint(0, w - 3)
@@ -251,6 +255,13 @@ class CustomSegmentationDataset(Dataset):
 
                 image[:, h1:h2, w1:w2] = image1[:, h1:h2, w1:w2]
                 label_image_onehot[:, h1:h2, w1:w2] = label_image_onehot1[:, h1:h2, w1:w2]
+
+                # try:
+                #     image[:, h1:h2, w1:w2] = image1[:, h1:h2, w1:w2]
+                #     label_image_onehot[:, h1:h2, w1:w2] = label_image_onehot1[:, h1:h2, w1:w2]
+                # except RuntimeError:
+                #     # 当两张图片大小不匹配时，不进行数据增强
+                #     pass
 
             return image, label_image_onehot
 
@@ -268,8 +279,28 @@ class CustomSegmentationDataset(Dataset):
         # 加载灰度图像并添加到列表中
         image_files.sort()
         image_list = []
-        for img_path in image_files:
-            img = Image.open(os.path.join(folder_path, img_path)).convert("L")  # 将图像转换为灰度模式
+        for idx, img_path in enumerate(image_files):
+            if idx <= 2:
+                img = Image.open(os.path.join(folder_path, img_path)).convert("L")  # 将图像转换为灰度模式
+            else:
+                if self.low_pixel_test:
+                    img = Image.open(os.path.join(folder_path, img_path)).convert("L")
+                    width, height = img.size
+                    new_width, new_height = width//4, height//4
+
+                    # 创建一个新的空白图像
+                    downsampled_image = Image.new("RGB", (new_width, new_height))
+                    # 遍历原图像，以局部单元格的左上角元素为基准，取样四方格
+                    for x in range(0, new_width):
+                        for y in range(0, new_height):
+                            pixel = img.getpixel((x * 4, y * 4))
+                            downsampled_image.putpixel((x, y), pixel)
+
+                    img = downsampled_image.resize((width, height), Image.BILINEAR)
+
+                else:
+                    img = Image.open(os.path.join(folder_path, img_path)).convert("L")
+
             image_list.append(img)
 
         # 确定图像的尺寸（假设所有图像都有相同的尺寸）
