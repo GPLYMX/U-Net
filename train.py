@@ -53,7 +53,7 @@ best_dice = 0.5
 # 定义损失函数和优化器
 criterion = nn.CrossEntropyLoss(weight=torch.tensor([1., 1., 3.]))
 model = AttU_Net(img_ch=len(in_channels), output_ch=num_classes)
-# model.load_state_dict(torch.load('temp.pt'))
+model.load_state_dict(torch.load('temp.pt'))
 
 optimizer = optim.Adam(model.parameters(), lr=0.0001)
 model = model.to(device)
@@ -83,10 +83,11 @@ for epoch in range(num_epochs):
     dice_score = 0
     n = 0
 
-    train_dataset = CustomSegmentationDataset(data_dir=r'../data_20230921/train',
-                                              channels=in_channels, label_format='png', augment=True)
+    train_dataset = CustomSegmentationDataset(data_dir=r'D:\mycodes\RITH\puer\data_20231020and0921\train',
+                                              channels=in_channels, label_format='png', augment=True, low_pixel_test=False
+                                              )
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_dataset = CustomSegmentationDataset(data_dir=r'../data_20230921/test',
+    test_dataset = CustomSegmentationDataset(data_dir=r'D:\mycodes\RITH\puer\data_20231020and0921\test',
                                              channels=in_channels, label_format='png', augment=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
@@ -112,6 +113,11 @@ for epoch in range(num_epochs):
         for i in range(iter_num_h):
             for j in range(iter_num_w):
                 model.to(device)
+                height, width = batch_sample.shape[2], batch_sample.shape[3]
+                iter_num_h, iter_num_w = math.ceil(height / base_h), math.ceil(width / base_w)
+                boundary_pixel_num_h, boundary_pixel_num_w = height % base_h, width % base_w
+                padding_pixel_num_h, padding_pixel_num_w = (base_h - boundary_pixel_num_h) % base_h, (
+                        base_w - boundary_pixel_num_w) % base_w
                 offset_h, offset_w = i * base_h, j * base_w
                 temp_sample = batch_sample[:, :, offset_h:base_h + offset_h, offset_w:base_w + offset_w]
                 temp_label = batch_label[:, :, offset_h:base_h + offset_h, offset_w:base_w + offset_w]
@@ -134,7 +140,7 @@ for epoch in range(num_epochs):
         test_dice_score = 0
         n = 0
         model.to(device)
-        model.eval()
+        # model.eval()
         with torch.no_grad():
             for batch_sample, batch_label in test_loader:
                 batch_sample = torch.nn.functional.pad(batch_sample, (0, padding_pixel_num_w, 0, padding_pixel_num_h),
