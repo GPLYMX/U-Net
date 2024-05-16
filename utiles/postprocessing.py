@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
 
 
-def calculate_center(gray_img, perimeter_thred=80, kernel_size=1):
+def calculate_center(gray_img, perimeter_thred=180, kernel_size=5):
     """
     读取一张0、1二值灰度图，剔除周长小于perimeter_thred的连通域，返回剩余连通域的中心点
     :param gray_img: 0、1二值灰度图
@@ -21,7 +21,7 @@ def calculate_center(gray_img, perimeter_thred=80, kernel_size=1):
     # 膨胀操作，合并连通域
     t = time()
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
-    gray_img = cv2.dilate(gray_img.astype(np.uint8), kernel, iterations=1)
+    gray_img = cv2.dilate(gray_img.astype(np.uint8), kernel, iterations=2)
 
     # 使用连通组件标记来标记和提取连通域
     _, labels, stats, centroids = cv2.connectedComponentsWithStats(gray_img)
@@ -55,19 +55,24 @@ def calculate_center(gray_img, perimeter_thred=80, kernel_size=1):
             perimeters.append(perimeter)
 
     # # 将连通域和中心点绘制到图像上
-    labeled_image = gray_img
+    # labeled_image = gray_img
 
     for center_point, perimeter in zip(connected_components_centers, perimeters):
         # 绘制中心点
-        cv2.circle(gray_img, center_point, 10, 4, -1)
+
+        # cv2.circle(gray_img, center_point, 10, 4, -1)
         # 绘制周长
         cv2.putText(gray_img, str(int(perimeter)), center_point, cv2.FONT_HERSHEY_SIMPLEX, 2, 5, 3)
+        # 绘制坐标
+        # cv2.putText(gray_img, str(center_point), center_point, cv2.FONT_HERSHEY_SIMPLEX, 2, 5, 3)
 
     # 坐标反转，由(宽、高)，变为(高、宽)
-    connected_components_centers = [i[::-1] for i in connected_components_centers]
+    # connected_components_centers = [i[::-1] for i in connected_components_centers]
+
     print('杂质个数：', len(connected_components_centers))
     print("后处理时间：", time()-t)
     # 显示图像
+    gray_img[gray_img==1] = 10
     plt.imshow(gray_img)
     plt.axis('off')
     plt.show()

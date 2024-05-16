@@ -32,7 +32,8 @@ def resize_img(root=r'F:\GK\pictures\output1692444903.png'):
         img = cv2.resize(img, size)
         return img
     else:
-        print('图片读取失败')
+        pass
+        # print('图片读取失败')
 
 
 def get_label(filename):
